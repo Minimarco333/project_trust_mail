@@ -52,3 +52,4 @@ Questions, bugs, or suggestions? Email **support@trustmail.com** or open an issu
 
 © 2025 TrustMail  |  Keeping Your Inbox Safe 📭
 
+forked from https://github.com/fenago/fenago21
