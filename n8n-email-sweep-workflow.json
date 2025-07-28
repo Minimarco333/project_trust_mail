@@ -1,0 +1,187 @@
+{
+  "name": "TrustMail Email Sweep - Last 24 Hours",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "generic",
+        "generic": {
+          "username": "={{ $env.EMAIL_USERNAME }}",
+          "password": "={{ $env.EMAIL_PASSWORD }}"
+        },
+        "host": "={{ $env.EMAIL_IMAP_HOST }}",
+        "port": "={{ $env.EMAIL_IMAP_PORT || 993 }}",
+        "secure": true,
+        "mailbox": "INBOX",
+        "format": "resolved",
+        "options": {
+          "allowUnauthorizedCerts": false
+        }
+      },
+      "id": "imap-email",
+      "name": "IMAP Email",
+      "type": "n8n-nodes-base.imapEmail",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter emails from the last 24 hours\nconst twentyFourHoursAgo = new Date();\ntwentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);\n\nconst filteredEmails = [];\n\nfor (const item of $input.all()) {\n  const emailDate = new Date(item.json.date);\n  \n  // Only include emails from the last 24 hours\n  if (emailDate > twentyFourHoursAgo) {\n    // Format the email data for TrustMail\n    const emailData = {\n      subject: item.json.subject || '',\n      from: item.json.from?.text || item.json.from || '',\n      to: item.json.to?.text || item.json.to || '',\n      body: item.json.text || item.json.html || '',\n      date: item.json.date,\n      uid: item.json.uid,\n      messageId: item.json.messageId\n    };\n    \n    filteredEmails.push(emailData);\n  }\n}\n\nconsole.log(`Found ${filteredEmails.length} emails from the last 24 hours`);\n\nreturn filteredEmails.map(email => ({ json: email }));"
+      },
+      "id": "filter-last-24h",
+      "name": "Filter Last 24h",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {}
+      },
+      "id": "split-in-batches",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/webhook/email",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "send-to-trustmail",
+      "name": "Send to TrustMail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the results from TrustMail\nconst results = $input.all();\n\nlet totalProcessed = 0;\nlet totalSuccessful = 0;\nlet totalErrors = 0;\n\nfor (const item of results) {\n  if (item.json.processed) {\n    totalProcessed += item.json.processed;\n  }\n  if (item.json.successful) {\n    totalSuccessful += item.json.successful;\n  }\n  if (item.json.errors) {\n    totalErrors += item.json.errors;\n  }\n}\n\nconst summary = {\n  timestamp: new Date().toISOString(),\n  totalEmails: totalProcessed,\n  successfullyProcessed: totalSuccessful,\n  errors: totalErrors,\n  message: `Email sweep completed: ${totalSuccessful}/${totalProcessed} emails processed successfully`\n};\n\nconsole.log('Email Sweep Summary:', summary);\n\nreturn [{ json: summary }];"
+      },
+      "id": "log-results",
+      "name": "Log Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "IMAP Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IMAP Email": {
+      "main": [
+        [
+          {
+            "node": "Filter Last 24h",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Last 24h": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Send to TrustMail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to TrustMail": {
+      "main": [
+        [
+          {
+            "node": "Log Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-28T11:37:08.000Z",
+  "versionId": "1"
+}
